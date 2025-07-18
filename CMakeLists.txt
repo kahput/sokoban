@@ -1,13 +1,15 @@
 cmake_minimum_required(VERSION 3.5)
-project(example)
+project(sokoban)
 set(CMAKE_C_STANDARD 99)
 
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
 add_subdirectory(ext)
 
-file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" "ext/stb_image/*.c" "ext/stb_image/*.h")
+file(GLOB_RECURSE SOURCES "src/*.c" "src/*.h" )
+
 add_executable(${PROJECT_NAME} ${SOURCES})
+target_include_directories(${PROJECT_NAME} PUBLIC "./src/")
 target_link_libraries( ${PROJECT_NAME} ext)
 
 if(EXISTS "${CMAKE_SOURCE_DIR}/assets")
