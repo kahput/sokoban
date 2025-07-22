@@ -1,8 +1,9 @@
 #include "renderer.h"
+#include "shader.h"
 
 #include "core/arena.h"
+#include "core/logger.h"
 
-#include <stdio.h>
 #define GLAD_GL_IMPLEMENTATION
 #include <glad/gl.h>
 #define GLFW_INCLUDE_NONE
@@ -11,28 +12,17 @@
 #include <cglm/cglm.h>
 
 #include <miniaudio/miniaudio.h>
+#include <stb/stb_image.h>
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <stdlib.h>
 
 typedef struct _state {
 	Arena *permanent;
 } State;
 
-static const char *vertex_shader_source = "#version 450 core\n"
-										  "layout (location = 0) in vec2 a_position;\n"
-										  "layout (location = 1) in vec2 a_texcoord;\n"
-										  "void main()\n"
-										  "{\n"
-										  "   gl_Position = vec4(a_position, 0.0f, 1.0);\n"
-										  "}\0";
-static const char *fragment_shader_source = "#version 450 core\n"
-											"out vec4 fragment_color;\n"
-											"void main()\n"
-											"{\n"
-											"   fragment_color = vec4(vec3(0.3f), 1.0f);\n"
-											"}\0";
 
 void gl_message_callback(GLenum source, GLenum type, GLuint id, GLenum severity, GLsizei length, GLchar const *message, void const *user_param);
 
@@ -60,26 +50,13 @@ int main(void) {
 
 	renderer_create(state.permanent);
 	glEnable(GL_DEBUG_OUTPUT);
+	glEnable(GL_BLEND); // you enable blending function
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
 	glDebugMessageCallback(gl_message_callback, NULL);
 	glDebugMessageControl(GL_DONT_CARE, GL_DONT_CARE, GL_DEBUG_SEVERITY_NOTIFICATION, 0, NULL, GL_FALSE);
 
-	uint32_t vertex_shader = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(vertex_shader, 1, &vertex_shader_source, NULL);
-	glCompileShader(vertex_shader);
-
-	uint32_t fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(fragment_shader, 1, &fragment_shader_source, NULL);
-	glCompileShader(fragment_shader);
-
-	uint32_t program = glCreateProgram();
-	glAttachShader(program, vertex_shader);
-	glAttachShader(program, fragment_shader);
-	glLinkProgram(program);
-
-	glDetachShader(program, vertex_shader);
-	glDetachShader(program, fragment_shader);
-	glDeleteShader(vertex_shader);
-	glDeleteShader(fragment_shader);
+	Shader *shader = shader_create_file(state.permanent, "./assets/shaders/v_default.glsl", "./assets/shaders/f_default.glsl");
 
 	// clang-format off
 	float vertices[] = {
@@ -112,8 +89,31 @@ int main(void) {
 	glEnableVertexArrayAttrib(vao, 1);
 
 	glVertexArrayAttribFormat(vao, 0, 2, GL_FLOAT, GL_FALSE, 0);
-	glVertexArrayAttribFormat(vao, 1, 2, GL_FLOAT, GL_FALSE, 2);
+	glVertexArrayAttribFormat(vao, 1, 2, GL_FLOAT, GL_FALSE, 2 * sizeof(*vertices));
+	glVertexArrayAttribBinding(vao, 0, 0);
+	glVertexArrayAttribBinding(vao, 1, 0);
 
+	stbi_set_flip_vertically_on_load(true);
+
+	uint32_t texture;
+	glCreateTextures(GL_TEXTURE_2D, 1, &texture);
+	// set the texture wrapping parameters
+	glTextureParameteri(texture, GL_TEXTURE_WRAP_S, GL_REPEAT); // set texture wrapping to GL_REPEAT (default wrapping method)
+	glTextureParameteri(texture, GL_TEXTURE_WRAP_T, GL_REPEAT);
+	// set texture filtering parameters
+	glTextureParameteri(texture, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTextureParameteri(texture, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	// load image, create texture and generate mipmaps
+	int32_t width, height, channels;
+	char path[] = "./assets/sprites/tile_0085.png";
+	uint8_t *data = stbi_load(path, &width, &height, &channels, 0);
+	if (data) {
+		glTextureStorage2D(texture, 1, GL_RGBA8, width, height);
+		glTextureSubImage2D(texture, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, data);
+	} else
+		LOG_ERROR("PATH: %s not found");
+
+	stbi_image_free(data);
 	while (!glfwWindowShouldClose(window)) {
 		int width, height;
 		glfwGetFramebufferSize(window, &width, &height);
@@ -122,7 +122,11 @@ int main(void) {
 		glClearColor(255, 255, 255, 255);
 		glClear(GL_COLOR_BUFFER_BIT);
 
-		glUseProgram(program);
+		shader_activate(shader);
+
+		glBindTextureUnit(0, texture);
+		shader_seti(shader, "u_texture", 0);
+
 		glBindVertexArray(vao);
 		glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
